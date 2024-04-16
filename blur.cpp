@@ -1,65 +1,108 @@
-#include "Image_Class.h" // Include the Image class header (assuming it has basic functionalities)
+#include "Image_Class.h"
 #include <iostream>
 #include <string>
-#include <cctype>
-#include <vector> // Include vector for temporary storage
-
+#include <algorithm>
+#include <vector>
 using namespace std;
+bool isValidExtension(const string &newname)
+{
+    // Convert the extension to lowercase for case-insensitive comparison
+    string extension = newname.substr(newname.find_last_of(".") + 1);
+    for (char &x : extension)
+    {
+        x = tolower(x);
+    }
+    // List of valid extensions
+    vector<string> validExtensions = {"jpg", "jpeg", "bmp", "png", "tga"};
 
+    // Check if the extension is in the list of valid extensions
+    return find(validExtensions.begin(), validExtensions.end(), extension) != validExtensions.end();
+}
+void SavedImg(Image &save)
+{
+    cout << "\nDo you want to save the edited image?\n";
+    cout << "1) Yes\n2) Discard Changes\n";
+    string choice2;
+    getline(cin, choice2);
+    while (choice2 != "1" && choice2 != "2")
+    {
+        cout << "Please select a valid choice: ";
+        getline(cin, choice2);
+    }
 
-void blurImage(Image& inputImage) {
-  // Edge handling variables
-  int blurRadius = 25; // Fixed blur radius (adjust as needed)  
-  int leftLimit = 0, rightLimit = inputImage.width - 1;
-  int topLimit = 0, bottomLimit = inputImage.height - 1;
-
-  // Temporary storage for blurred values
-  vector<unsigned char> blurredRow(inputImage.width * inputImage.channels, 0);
-  vector<vector<unsigned char>> blurredImage(inputImage.height, blurredRow);
-
-  // Iterate through each pixel
-  for (int y = 0; y < inputImage.height; y++) {
-    for (int x = 0; x < inputImage.width; x++) {
-      // Calculate average considering edge cases
-      int redSum = 0, greenSum = 0, blueSum = 0;
-      int neighborCount = 0;
-      for (int dy = -blurRadius; dy <= blurRadius; dy++) {
-        for (int dx = -blurRadius; dx <= blurRadius; dx++) {
-          int newX = x + dx;
-          int newY = y + dy;
-
-          // Check if within image boundaries
-          if (newX >= leftLimit && newX <= rightLimit && newY >= topLimit && newY <= bottomLimit) {
-            redSum += inputImage.imageData[(newY * inputImage.width + newX) * inputImage.channels];
-            greenSum += inputImage.imageData[(newY * inputImage.width + newX) * inputImage.channels + 1];
-            blueSum += inputImage.imageData[(newY * inputImage.width + newX) * inputImage.channels + 2];
-            neighborCount++;
-          }
+    if (choice2 == "1")
+    {
+        string newname;
+        cout << "Please enter the name of new image\nand specify extension .jpg, .jpeg, .bmp, .png, .tga: ";
+        cin >> newname;
+        while (!isValidExtension(newname))
+        {
+            cout << "Invalid file extension. Only Supported: .jpg, .jpeg, .bmp, .png, .tga: ";
+            cin >> newname;
+            continue;
         }
-      }
-
-      // Set the blurred value (average)
-      blurredImage[y][x * inputImage.channels] = redSum / neighborCount;
-      blurredImage[y][x * inputImage.channels + 1] = greenSum / neighborCount;
-      blurredImage[y][x * inputImage.channels + 2] = blueSum / neighborCount;
+        save.saveImage(newname);
+        cout << "Image saved successfully.\n\n";
     }
-  }
-
-  // Copy blurred values back to original image data
-  for (int y = 0; y < inputImage.height; y++) {
-    for (int x = 0; x < inputImage.width; x++) {
-      for (int c = 0; c < inputImage.channels; c++) {
-        inputImage.imageData[(y * inputImage.width + x) * inputImage.channels + c] = blurredImage[y][x * inputImage.channels + c];
-      }
+    else if (choice2 == "2")
+    {
+        cout << "Changes discarded successfully.\n\n";
     }
-  }
+}
+void blurImageLevel(Image &inputImage, int blurRadius)
+{
+    // Edge handling variables
+    int leftLimit = 0, rightLimit = inputImage.width - 1;
+    int topLimit = 0, bottomLimit = inputImage.height - 1;
+
+    // Temporary storage for blurred values
+    vector<vector<vector<int>>> prefixSum(inputImage.channels, vector<vector<int>>(inputImage.height + 1, vector<int>(inputImage.width + 1, 0)));
+
+    // Calculate prefix sum for the entire image for each channel separately
+    for (int c = 0; c < inputImage.channels; c++)
+    {
+        for (int y = 0; y < inputImage.height; y++)
+        {
+            for (int x = 0; x < inputImage.width; x++)
+            {
+                prefixSum[c][y + 1][x + 1] = inputImage.imageData[(y * inputImage.width + x) * inputImage.channels + c];
+                prefixSum[c][y + 1][x + 1] += prefixSum[c][y][x + 1] + prefixSum[c][y + 1][x] - prefixSum[c][y][x];
+            }
+        }
+    }
+
+    // Iterate through each pixel
+    for (int y = 0; y < inputImage.height; y++)
+    {
+        for (int x = 0; x < inputImage.width; x++)
+        {
+            // Calculate average considering edge cases for each channel separately
+            for (int c = 0; c < inputImage.channels; c++)
+            {
+                int x1 = max(0, x - blurRadius);
+                int x2 = min(inputImage.width - 1, x + blurRadius);
+                int y1 = max(0, y - blurRadius);
+                int y2 = min(inputImage.height - 1, y + blurRadius);
+                int neighborCount = (x2 - x1 + 1) * (y2 - y1 + 1);
+
+                // Calculate sum of pixels in the blur region using prefix sum for each channel separately
+                int channelSum = prefixSum[c][y2 + 1][x2 + 1] - prefixSum[c][y1][x2 + 1] - prefixSum[c][y2 + 1][x1] + prefixSum[c][y1][x1];
+
+                // Set the blurred value (average) for each channel separately
+                inputImage.imageData[(y * inputImage.width + x) * inputImage.channels + c] = channelSum / neighborCount;
+            }
+        }
+    }
 }
 
-int main() {
-    while (true) {
+int main()
+{
+    while (true)
+    {
         // Variables to store input and image data
         string inputImageName, blurredImageName, imageExtension, blurredImageExtension;
         char userChoice;
+        string level;
 
         // Prompt user to enter input image details
         cout << "Enter the name of the input image: ";
@@ -71,33 +114,44 @@ int main() {
         Image inputImage(inputImageName + "." + imageExtension);
 
         // Check if the image exists
-        if (inputImage.width == 0 || inputImage.height == 0) {
+        if (inputImage.width == 0 || inputImage.height == 0)
+        {
             cout << "Image not found!" << endl;
             break;
         }
-
-        // Apply blur
-        blurImage(inputImage);
-
-        // Ask user if they want to save the blurred image
-        cout << "Do you want to save the blurred image? (Y/N): ";
-        cin >> userChoice;
-
-        if (tolower(userChoice) == 'y') {
-            // Prompt user
-         cout << "Enter name of blurred image: ";
-        cin >> blurredImageName;
-        cout << "Choose blurred image extension (PNG, JPEG, JPG, BMP): ";
-        cin >> blurredImageExtension;
-
-        // Save the blurred image
-        if (!inputImage.saveImage(blurredImageName + "." + blurredImageExtension)) {
-            cerr << "Error saving blurred image!" << endl;
-        } else {
-            cout << "Blurred image saved successfully!" << endl;
+;
+        // Prompt user to enter blur radius
+        // Prompt user to enter blur radius
+        cout << "Enter the blur level you want (1 , 2 , 3): ";
+        while (true)
+        {
+            cin >> level;
+            if (level == "1")
+            {
+                int blurRadius = 20;
+                blurImageLevel(inputImage, blurRadius);
+                SavedImg(inputImage);
+                break;
+            }
+            else if (level == "2")
+            {
+                int blurRadius = 30;
+                blurImageLevel(inputImage, blurRadius);
+                SavedImg(inputImage);
+                break;
+            }
+            else if (level == "3")
+            {
+                int blurRadius = 45;
+                blurImageLevel(inputImage, blurRadius);
+                SavedImg(inputImage);
+                break;
+            }
+            else
+            {
+                cout << "please select a valid choice: ";
+            }
         }
+        break;
     }
-
-    return 0;
-}
 }
